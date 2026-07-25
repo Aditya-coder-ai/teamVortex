@@ -26,7 +26,14 @@ const verifyOtp = async (req, res, next) => {
   try {
     const result = await authService.verifyOtp(req.body);
     
-    // Set HTTP-only cookie if refreshToken present
+    // Set HTTP-only cookie for token and refreshToken
+    if (result.token) {
+      res.cookie('token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 15 * 60 * 1000, // 15 mins
+      });
+    }
     if (result.refreshToken) {
       res.cookie('refreshToken', result.refreshToken, {
         httpOnly: true,
@@ -54,6 +61,13 @@ const login = async (req, res, next) => {
   try {
     const result = await authService.loginUser(req.body);
 
+    if (result.token) {
+      res.cookie('token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 15 * 60 * 1000,
+      });
+    }
     if (result.refreshToken) {
       res.cookie('refreshToken', result.refreshToken, {
         httpOnly: true,

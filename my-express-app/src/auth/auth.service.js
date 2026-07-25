@@ -24,12 +24,13 @@ const registerUser = async ({ fullName, email, password, role }) => {
       if (role) existingUser.role = role;
       
       await existingUser.save();
-      await generateAndSendOtp(existingUser);
+      const otpRes1 = await generateAndSendOtp(existingUser);
 
       return {
         message: 'Account updated. Verification OTP sent to email.',
         email: existingUser.email,
         isVerified: false,
+        devOtp: otpRes1.devOtp,
       };
     }
   }
@@ -48,12 +49,13 @@ const registerUser = async ({ fullName, email, password, role }) => {
   });
 
   // Generate & Send OTP
-  await generateAndSendOtp(newUser);
+  const otpRes2 = await generateAndSendOtp(newUser);
 
   return {
     message: 'Registration successful. OTP sent to your email.',
     email: newUser.email,
     isVerified: false,
+    devOtp: otpRes2.devOtp,
   };
 };
 

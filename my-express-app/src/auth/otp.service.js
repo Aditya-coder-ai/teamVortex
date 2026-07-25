@@ -64,7 +64,11 @@ const generateAndSendOtp = async (user) => {
   // Send email
   await sendOtpEmail(user.email, otpCode);
 
-  return { message: 'OTP sent successfully', expiresAt: otpExpires };
+  return { 
+    message: 'OTP sent successfully', 
+    expiresAt: otpExpires,
+    devOtp: process.env.NODE_ENV !== 'production' ? otpCode : undefined
+  };
 };
 
 /**

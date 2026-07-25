@@ -1,122 +1,167 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import React, { useState, useEffect } from 'react';
+import './App.css';
+import Header from './components/Header';
+import HeroSection from './components/HeroSection';
+import MenuSection from './components/MenuSection';
+import StayConnectedSection from './components/StayConnectedSection';
+import Footer from './components/Footer';
+import DishModal from './components/DishModal';
+import LoginModal from './components/LoginModal';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [activeSection, setActiveSection] = useState('hero');
+  const [cart, setCart] = useState([]);
+  const [selectedDish, setSelectedDish] = useState(null);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [user, setUser] = useState(null);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Auto clear toast notification
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage('');
+      }, 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  // Check stored authentication token on mount
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.user) {
+            setUser(data.user);
+          }
+        } else {
+          // Invalid or expired token
+          localStorage.removeItem('auth_token');
+        }
+      } catch (err) {
+        console.error('Failed to restore user session:', err);
+      }
+    };
+
+    fetchCurrentUser();
+  }, []);
+
+  const handleNavigate = (sectionId) => {
+    setActiveSection(sectionId);
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleAddToCart = (dishItem) => {
+    setCart(prevCart => [...prevCart, dishItem]);
+    setToastMessage(`Added ${dishItem.quantity}x ${dishItem.name} to your order!`);
+  };
+
+  const handleLoginSuccess = (userData) => {
+    setUser(userData);
+    setToastMessage(`Welcome back, ${userData.fullName || userData.name || userData.email.split('@')[0]}!`);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Logout request error:', err);
+    }
+    localStorage.removeItem('auth_token');
+    setUser(null);
+    setToastMessage('You have been logged out.');
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="app-container texture-overlay">
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          zIndex: 200,
+          background: 'var(--on-surface)',
+          color: '#fff',
+          padding: '0.85rem 1.75rem',
+          borderRadius: '9999px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          fontSize: '0.9rem',
+          fontWeight: '500',
+          borderLeft: '4px solid var(--primary)',
+          animation: 'slideUp 0.3s ease'
+        }}>
+          <span>✨</span>
+          <span>{toastMessage}</span>
+          <button 
+            onClick={() => setToastMessage('')}
+            style={{ color: '#aaa', marginLeft: '0.5rem', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      )}
 
-      <div className="ticks"></div>
+      {/* Header Navigation */}
+      <Header 
+        activeSection={activeSection}
+        onNavigate={handleNavigate}
+        onOpenLogin={() => setIsLoginOpen(true)}
+        user={user}
+        onLogout={handleLogout}
+        cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
+      />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {/* Main Content Sections */}
+      <main>
+        <HeroSection 
+          onExploreClick={() => handleNavigate('menu')}
+        />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        <MenuSection 
+          onSelectDish={(dish) => setSelectedDish(dish)}
+        />
+
+        <StayConnectedSection 
+          onToast={(msg) => setToastMessage(msg)}
+        />
+      </main>
+
+      {/* Footer */}
+      <Footer 
+        onNavigate={handleNavigate}
+      />
+
+      {/* Interactive Modals */}
+      {selectedDish && (
+        <DishModal 
+          dish={selectedDish}
+          onClose={() => setSelectedDish(null)}
+          onAddToCart={handleAddToCart}
+        />
+      )}
+
+      <LoginModal 
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+    </div>
+  );
 }
 
-export default App
+export default App;
