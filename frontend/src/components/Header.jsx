@@ -16,7 +16,8 @@ export default function Header({
   onOpenOrderStatus,
   activeOrder,
   queueState,
-  currentUser
+  currentUser,
+  onOpenDashboard
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [featuresDropdownOpen, setFeaturesDropdownOpen] = useState(false);
@@ -131,6 +132,28 @@ export default function Header({
               </div>
             )}
           </div>
+
+          {/* Staff OS Dashboard Link */}
+          <button
+            type="button"
+            className="nav-link staff-dashboard-nav-btn"
+            onClick={onOpenDashboard}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              background: '#0F172A',
+              color: '#FFFFFF',
+              padding: '0.35rem 0.85rem',
+              borderRadius: '9999px',
+              fontSize: '0.8rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(15,23,42,0.15)'
+            }}
+          >
+            📊 Staff OS / KDS
+          </button>
         </nav>
 
         {/* Header Right Actions */}

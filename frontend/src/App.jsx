@@ -17,8 +17,17 @@ import OrderStatusModal from './components/OrderStatusModal';
 import AiChatConcierge from './components/AiChatConcierge';
 
 import { INITIAL_MENU_ITEMS } from './data/menuData';
+import DashboardLayout from './components/dashboard/DashboardLayout';
 
 function App() {
+  const [viewMode, setViewMode] = useState(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes('dashboard') || path.includes('inventory') || path.includes('kds')) {
+      return 'dashboard';
+    }
+    return 'storefront';
+  });
+
   const [activeSection, setActiveSection] = useState('hero');
   const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
   const [cart, setCart] = useState([]);
@@ -132,6 +141,18 @@ function App() {
     setToastMessage('You have been logged out.');
   };
 
+  if (viewMode === 'dashboard') {
+    return (
+      <DashboardLayout 
+        onReturnToStore={() => setViewMode('storefront')}
+        activeOrders={activeOrder ? [activeOrder] : []}
+        onUpdateOrderStatus={(orderId, nextStatus) => {
+          setToastMessage(`Order ${orderId} updated to ${nextStatus}`);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-container texture-overlay">
       {/* Toast Notification Banner */}
@@ -183,6 +204,7 @@ function App() {
         onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
         activeOrder={activeOrder}
         queueState={queueState}
+        onOpenDashboard={() => setViewMode('dashboard')}
       />
 
       {/* Active Dine-In Table Sticky Banner */}
