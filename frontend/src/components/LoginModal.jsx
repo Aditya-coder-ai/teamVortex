@@ -5,6 +5,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
 
   // Form states
   const [fullName, setFullName] = useState('');
@@ -17,6 +18,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const resetMessages = () => {
     setErrorMsg('');
     setInfoMsg('');
+    setPreviewUrl('');
   };
 
   // Handle Login Submit
@@ -36,6 +38,12 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
       if (!response.ok) {
         if (data.requiresVerification) {
+          if (data.devOtp) {
+            setOtp(data.devOtp);
+          }
+          if (data.previewUrl) {
+            setPreviewUrl(data.previewUrl);
+          }
           setInfoMsg('Email requires verification. A code has been sent to your email.');
           setTab('otp');
         } else {
@@ -73,7 +81,8 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       const data = await response.json();
 
       if (!response.ok) {
-        setErrorMsg(data.message || (data.errors && data.errors[0]?.message) || 'Registration failed.');
+        const detailErr = data.errors && data.errors.length > 0 ? data.errors.map(e => e.message).join('. ') : data.message;
+        setErrorMsg(detailErr || 'Registration failed.');
         return;
       }
 
@@ -82,6 +91,9 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         setInfoMsg(`Account created! [Dev Mode OTP: ${data.devOtp}] (Auto-filled below)`);
       } else {
         setInfoMsg('Account created! Please enter the 6-digit OTP sent to your email.');
+      }
+      if (data.previewUrl) {
+        setPreviewUrl(data.previewUrl);
       }
       setTab('otp');
     } catch (err) {
@@ -322,11 +334,11 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
             <div>
               <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: '600', marginBottom: '0.4rem' }}>
-                Password (min 8 chars, 1 upper, 1 lower, 1 number, 1 special e.g. Password@123)
+                Password (min 6 characters)
               </label>
               <input 
                 type="password" 
-                placeholder="Password@123"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -386,6 +398,21 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 }}
               />
             </div>
+
+            {previewUrl && (
+              <div style={{
+                textAlign: 'center',
+                background: 'rgba(76, 175, 80, 0.08)',
+                border: '1px solid #4CAF50',
+                borderRadius: '1rem',
+                padding: '0.75rem 1rem',
+                fontSize: '0.825rem'
+              }}>
+                📧 <a href={previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#4CAF50', fontWeight: 600 }}>
+                  View your OTP email here (Ethereal inbox)
+                </a>
+              </div>
+            )}
 
             <button 
               type="submit" 

@@ -31,6 +31,7 @@ const registerUser = async ({ fullName, email, password, role }) => {
         email: existingUser.email,
         isVerified: false,
         devOtp: otpRes1.devOtp,
+        previewUrl: otpRes1.previewUrl,
       };
     }
   }
@@ -56,6 +57,7 @@ const registerUser = async ({ fullName, email, password, role }) => {
     email: newUser.email,
     isVerified: false,
     devOtp: otpRes2.devOtp,
+    previewUrl: otpRes2.previewUrl,
   };
 };
 
@@ -122,10 +124,12 @@ const loginUser = async ({ email, password }) => {
   // Check email verification status
   if (!user.isVerified) {
     // Re-send OTP if unverified
-    await generateAndSendOtp(user);
+    const otpResLogin = await generateAndSendOtp(user);
     const error = new Error('Email not verified. A new OTP has been sent to your email.');
     error.statusCode = 403;
     error.requiresVerification = true;
+    error.devOtp = otpResLogin.devOtp;
+    error.previewUrl = otpResLogin.previewUrl;
     throw error;
   }
 

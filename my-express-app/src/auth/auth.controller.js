@@ -98,6 +98,8 @@ const resendOtp = async (req, res, next) => {
       success: true,
       message: result.message,
       expiresAt: result.expiresAt,
+      devOtp: result.devOtp,
+      previewUrl: result.previewUrl,
     });
   } catch (error) {
     next(error);

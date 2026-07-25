@@ -29,6 +29,8 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     message,
     ...(err.requiresVerification ? { requiresVerification: true } : {}),
+    ...(err.devOtp && process.env.NODE_ENV !== 'production' ? { devOtp: err.devOtp } : {}),
+    ...(err.previewUrl ? { previewUrl: err.previewUrl } : {}),
   });
 };
 

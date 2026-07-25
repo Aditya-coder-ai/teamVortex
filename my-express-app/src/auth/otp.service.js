@@ -62,12 +62,13 @@ const generateAndSendOtp = async (user) => {
   await user.save();
 
   // Send email
-  await sendOtpEmail(user.email, otpCode);
+  const emailResult = await sendOtpEmail(user.email, otpCode);
 
   return { 
     message: 'OTP sent successfully', 
     expiresAt: otpExpires,
-    devOtp: process.env.NODE_ENV !== 'production' ? otpCode : undefined
+    devOtp: process.env.NODE_ENV !== 'production' ? otpCode : undefined,
+    previewUrl: emailResult?.previewUrl || null
   };
 };
 

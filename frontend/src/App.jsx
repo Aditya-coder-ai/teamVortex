@@ -8,13 +8,37 @@ import Footer from './components/Footer';
 import DishModal from './components/DishModal';
 import LoginModal from './components/LoginModal';
 
+// Feature Modals
+import QrMenuModal from './components/QrMenuModal';
+import AiTasteAssistantModal from './components/AiTasteAssistantModal';
+import TableReservationModal from './components/TableReservationModal';
+import QueueTrackerModal from './components/QueueTrackerModal';
+import OrderStatusModal from './components/OrderStatusModal';
+import AiChatConcierge from './components/AiChatConcierge';
+
+import { INITIAL_MENU_ITEMS } from './data/menuData';
+
 function App() {
   const [activeSection, setActiveSection] = useState('hero');
+  const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
   const [cart, setCart] = useState([]);
   const [selectedDish, setSelectedDish] = useState(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+
+  // Feature Modal States
+  const [lang, setLang] = useState('EN');
+  const [currentTable, setCurrentTable] = useState(null); // { tableNumber, zone }
+  const [queueState, setQueueState] = useState(null); // { ticketNo, position, estWaitMins }
+  const [activeOrder, setActiveOrder] = useState(null); // { orderId, items, total, step, tableNumber }
+
+  // Modal Open Controls
+  const [isQrOpen, setIsQrOpen] = useState(false);
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isReservationOpen, setIsReservationOpen] = useState(false);
+  const [isQueueOpen, setIsQueueOpen] = useState(false);
+  const [isOrderStatusOpen, setIsOrderStatusOpen] = useState(false);
 
   // Auto clear toast notification
   useEffect(() => {
@@ -43,7 +67,6 @@ function App() {
             setUser(data.user);
           }
         } else {
-          // Invalid or expired token
           localStorage.removeItem('auth_token');
         }
       } catch (err) {
@@ -63,8 +86,22 @@ function App() {
   };
 
   const handleAddToCart = (dishItem) => {
+    const qty = dishItem.quantity || 1;
     setCart(prevCart => [...prevCart, dishItem]);
-    setToastMessage(`Added ${dishItem.quantity}x ${dishItem.name} to your order!`);
+
+    // Create live order for status tracking simulation
+    const newTotal = cart.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0) + (dishItem.price * qty);
+    const updatedItems = [...cart, dishItem];
+
+    setActiveOrder({
+      orderId: 'FB-' + Math.floor(1000 + Math.random() * 9000),
+      items: updatedItems,
+      total: newTotal,
+      step: 2, // Kitchen Prep stage
+      tableNumber: currentTable ? currentTable.tableNumber : 'Takeout'
+    });
+
+    setToastMessage(`Added ${qty}x ${dishItem.name} to your order! Live order tracking active.`);
   };
 
   const handleLoginSuccess = (userData) => {
@@ -109,7 +146,7 @@ function App() {
           <span>{toastMessage}</span>
           <button 
             onClick={() => setToastMessage('')}
-            style={{ color: '#aaa', marginLeft: '0.5rem', cursor: 'pointer' }}
+            style={{ color: '#aaa', marginLeft: '0.5rem', cursor: 'pointer', background: 'none', border: 'none' }}
           >
             ✕
           </button>
@@ -121,19 +158,34 @@ function App() {
         activeSection={activeSection}
         onNavigate={handleNavigate}
         onOpenLogin={() => setIsLoginOpen(true)}
-        user={user}
+        currentUser={user}
         onLogout={handleLogout}
-        cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
+        cartCount={cart.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+        lang={lang}
+        onLangChange={(newLang) => { setLang(newLang); setToastMessage(`Language changed to ${newLang}`); }}
+        currentTable={currentTable}
+        onOpenQrModal={() => setIsQrOpen(true)}
+        onOpenReservation={() => setIsReservationOpen(true)}
+        onOpenQueue={() => setIsQueueOpen(true)}
+        onOpenAiAssistant={() => setIsAiOpen(true)}
+        onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
+        activeOrder={activeOrder}
+        queueState={queueState}
       />
 
       {/* Main Content Sections */}
       <main>
         <HeroSection 
           onExploreClick={() => handleNavigate('menu')}
+          onReserveClick={() => setIsReservationOpen(true)}
         />
 
         <MenuSection 
+          menuItems={menuItems}
           onSelectDish={(dish) => setSelectedDish(dish)}
+          onAddToCart={handleAddToCart}
+          lang={lang}
+          onOpenAiAssistant={() => setIsAiOpen(true)}
         />
 
         <StayConnectedSection 
@@ -159,6 +211,63 @@ function App() {
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+      />
+
+      {/* 1. QR Table Menu Modal */}
+      <QrMenuModal
+        isOpen={isQrOpen}
+        onClose={() => setIsQrOpen(false)}
+        currentTable={currentTable?.tableNumber}
+        onSelectTable={(tableInfo) => {
+          setCurrentTable(tableInfo);
+          setToastMessage(`Dine-in Table #${tableInfo.tableNumber} (${tableInfo.zone}) Activated!`);
+        }}
+      />
+
+      {/* 2. AI Taste Assistant Modal */}
+      <AiTasteAssistantModal
+        isOpen={isAiOpen}
+        onClose={() => setIsAiOpen(false)}
+        menuItems={menuItems}
+        onSelectDish={(dish) => {
+          setSelectedDish(dish);
+          setIsAiOpen(false);
+        }}
+      />
+
+      {/* 3. Table Reservation Modal */}
+      <TableReservationModal
+        isOpen={isReservationOpen}
+        onClose={() => setIsReservationOpen(false)}
+      />
+
+      {/* 4. Virtual Queue Tracker Modal */}
+      <QueueTrackerModal
+        isOpen={isQueueOpen}
+        onClose={() => setIsQueueOpen(false)}
+        queueState={queueState}
+        onJoinQueue={(qData) => {
+          setQueueState(qData);
+          setToastMessage(`Joined virtual queue! Ticket #${qData.ticketNo}`);
+        }}
+        onLeaveQueue={() => {
+          setQueueState(null);
+          setToastMessage('You left the virtual queue.');
+        }}
+      />
+
+      {/* 5. Live Order Status Modal */}
+      <OrderStatusModal
+        isOpen={isOrderStatusOpen}
+        onClose={() => setIsOrderStatusOpen(false)}
+        activeOrder={activeOrder}
+      />
+
+      {/* Floating AI Concierge Live Chat Widget */}
+      <AiChatConcierge
+        menuItems={menuItems}
+        onAddToCart={handleAddToCart}
+        onOpenReservation={() => setIsReservationOpen(true)}
       />
     </div>
   );

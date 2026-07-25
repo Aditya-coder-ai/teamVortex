@@ -1,18 +1,9 @@
 const { z } = require('zod');
 
-// Password complexity regex: min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-
 const registerSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters long')
-    .refine(
-      (val) => passwordRegex.test(val),
-      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
-    ),
+  password: z.string().min(6, 'Password must be at least 6 characters long'),
   role: z.enum(['customer', 'staff', 'manager', 'admin']).optional().default('customer'),
 });
 

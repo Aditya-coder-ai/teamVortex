@@ -6,113 +6,166 @@ export default function DishModal({ dish, onClose, onAddToCart }) {
 
   if (!dish) return null;
 
-  const handleAddToCart = () => {
+  const isSoldOut = dish.stock === 0;
+
+  const handleAdd = () => {
+    if (isSoldOut) return;
     onAddToCart({
       ...dish,
       quantity,
-      spiceLevel
+      selectedSpice: spiceLevel
     });
     onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close modal">
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px', padding: 0, overflow: 'hidden' }}>
+        <button className="modal-close" onClick={onClose} aria-label="Close modal" style={{ zIndex: 10 }}>
           ✕
         </button>
 
-        <div style={{ textAlign: 'center' }}>
+        {/* Modal Hero Image */}
+        <div style={{ position: 'relative', height: '240px' }}>
+          <img
+            src={dish.image}
+            alt={dish.name}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
           <div style={{
-            width: '180px',
-            height: '180px',
-            borderRadius: '50%',
-            overflow: 'hidden',
-            margin: '0 auto 1.5rem auto',
-            boxShadow: '0 12px 24px rgba(0,0,0,0.15)'
-          }}>
-            <img 
-              src={dish.image} 
-              alt={dish.name} 
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
-          </div>
-
-          {dish.badge && (
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '80px',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)'
+          }} />
+          
+          <div style={{ position: 'absolute', bottom: '16px', left: '20px', right: '20px', color: '#fff' }}>
             <span style={{
-              display: 'inline-block',
-              background: 'rgba(255, 91, 0, 0.1)',
-              color: 'var(--primary)',
+              background: 'var(--primary)',
+              padding: '0.2rem 0.6rem',
+              borderRadius: '9999px',
               fontSize: '0.75rem',
               fontWeight: '700',
-              padding: '0.25rem 0.85rem',
-              borderRadius: '9999px',
-              textTransform: 'uppercase',
-              marginBottom: '0.75rem'
+              textTransform: 'uppercase'
             }}>
-              {dish.badge}
+              {dish.category}
             </span>
-          )}
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.75rem', marginTop: '0.2rem', color: '#fff' }}>
+              {dish.name}
+            </h3>
+          </div>
+        </div>
 
-          <h3 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{dish.name}</h3>
-          <p style={{ color: 'var(--secondary)', fontSize: '0.925rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+        <div style={{ padding: '1.5rem' }}>
+          {/* Price & Rating Row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <span style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--primary)' }}>
+              ${dish.price.toFixed(2)}
+            </span>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ color: '#ffb300' }}>★ {dish.rating}</span>
+              <span style={{ color: 'var(--secondary)', fontSize: '0.85rem' }}>({dish.reviewsCount || 42} reviews)</span>
+            </div>
+          </div>
+
+          <p style={{ color: 'var(--on-surface-variant)', lineHeight: '1.5', marginBottom: '1.25rem', fontSize: '0.95rem' }}>
             {dish.description}
           </p>
 
-          {/* Customization Options */}
-          <div style={{ background: 'var(--surface-container-low)', padding: '1.25rem', borderRadius: '1.25rem', marginBottom: '1.5rem', textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.5rem' }}>
-              Spice Preference
+          {/* Live Availability & Allergen Box */}
+          <div style={{
+            background: 'var(--surface-container-low)',
+            borderRadius: '1rem',
+            padding: '0.85rem 1rem',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            justify: 'space-between',
+            alignItems: 'center',
+            fontSize: '0.85rem'
+          }}>
+            <div>
+              <span style={{ color: 'var(--secondary)' }}>Live Availability: </span>
+              <strong style={{ color: isSoldOut ? '#c62828' : 'var(--primary)' }}>
+                {isSoldOut ? 'Sold Out' : `In Stock (${dish.stock} remaining)`}
+              </strong>
+            </div>
+
+            {dish.allergens && dish.allergens.length > 0 && (
+              <div>
+                <span style={{ color: 'var(--secondary)' }}>Allergens: </span>
+                <span style={{ fontWeight: '600', color: '#c62828' }}>
+                  {dish.allergens.join(', ')}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Spice Selection */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: '600', marginBottom: '0.5rem' }}>
+              Select Spice Preference
             </label>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              {['Mild', 'Medium 🌶️', 'Authentic Hot 🌶️🌶️'].map(lvl => (
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {['Mild', 'Medium', 'Extra Spicy'].map(level => (
                 <button
-                  key={lvl}
+                  key={level}
                   type="button"
-                  onClick={() => setSpiceLevel(lvl)}
+                  onClick={() => setSpiceLevel(level)}
                   style={{
                     flex: 1,
                     padding: '0.5rem',
                     borderRadius: '9999px',
-                    fontSize: '0.8rem',
+                    border: spiceLevel === level ? '2px solid var(--primary)' : '1px solid var(--outline-variant)',
+                    background: spiceLevel === level ? 'rgba(255, 91, 0, 0.08)' : 'var(--background)',
+                    color: spiceLevel === level ? 'var(--primary)' : 'var(--on-surface)',
                     fontWeight: '600',
-                    border: '1px solid',
-                    borderColor: spiceLevel === lvl ? 'var(--primary)' : 'var(--outline-variant)',
-                    background: spiceLevel === lvl ? 'var(--primary)' : 'var(--surface-container-lowest)',
-                    color: spiceLevel === lvl ? '#fff' : 'var(--on-surface)',
-                    transition: 'all 0.2s ease'
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
                   }}
                 >
-                  {lvl}
+                  {level}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Quantity and Add to Cart */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--surface-container-low)', padding: '0.4rem 0.8rem', borderRadius: '9999px' }}>
-              <button 
+          {/* Quantity Counter & Add to Order */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              border: '1px solid var(--outline-variant)',
+              borderRadius: '9999px',
+              padding: '0.25rem 0.5rem'
+            }}>
+              <button
+                type="button"
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                style={{ fontSize: '1.25rem', fontWeight: '700', padding: '0 0.5rem' }}
+                style={{ background: 'none', border: 'none', padding: '0.4rem 0.75rem', cursor: 'pointer', fontWeight: '700' }}
               >
                 -
               </button>
-              <span style={{ fontWeight: '700', fontSize: '1rem', minWidth: '20px', textAlign: 'center' }}>{quantity}</span>
-              <button 
-                onClick={() => setQuantity(quantity + 1)}
-                style={{ fontSize: '1.25rem', fontWeight: '700', padding: '0 0.5rem' }}
+              <span style={{ fontWeight: '700', padding: '0 0.5rem' }}>{quantity}</span>
+              <button
+                type="button"
+                onClick={() => setQuantity(Math.min(dish.stock || 10, quantity + 1))}
+                style={{ background: 'none', border: 'none', padding: '0.4rem 0.75rem', cursor: 'pointer', fontWeight: '700' }}
               >
                 +
               </button>
             </div>
 
-            <button 
+            <button
+              type="button"
+              disabled={isSoldOut}
+              onClick={handleAdd}
               className="btn-pill-primary"
-              style={{ flex: 1 }}
-              onClick={handleAddToCart}
+              style={{ flex: 1, padding: '0.85rem', opacity: isSoldOut ? 0.5 : 1 }}
             >
-              Add to Order • ${(dish.price * quantity).toFixed(2)}
+              {isSoldOut ? 'Sold Out' : `Add ${quantity} to Order • $${(dish.price * quantity).toFixed(2)}`}
             </button>
           </div>
         </div>
