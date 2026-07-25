@@ -40,6 +40,18 @@ function App() {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isOrderStatusOpen, setIsOrderStatusOpen] = useState(false);
 
+  // Auto-detect table QR code scan from URL query params (?table=04&zone=Garden%20Terrace)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tableParam = params.get('table');
+    const zoneParam = params.get('zone') || 'Garden Terrace';
+    if (tableParam) {
+      const formattedNum = String(tableParam).padStart(2, '0');
+      setCurrentTable({ tableNumber: formattedNum, zone: zoneParam });
+      setToastMessage(`📱 QR Code Scanned! Dine-In Table #${formattedNum} (${zoneParam}) Activated.`);
+    }
+  }, []);
+
   // Auto clear toast notification
   useEffect(() => {
     if (toastMessage) {
@@ -173,6 +185,41 @@ function App() {
         queueState={queueState}
       />
 
+      {/* Active Dine-In Table Sticky Banner */}
+      {currentTable && (
+        <div style={{
+          position: 'fixed',
+          top: '72px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 45,
+          background: 'var(--primary)',
+          color: '#ffffff',
+          padding: '0.45rem 1.25rem',
+          borderRadius: '9999px',
+          boxShadow: '0 4px 20px rgba(255,91,0,0.35)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          fontSize: '0.825rem',
+          fontWeight: '700'
+        }}>
+          <span>📱 Dine-In Table #{currentTable.tableNumber} ({currentTable.zone})</span>
+          <button
+            onClick={() => setIsQrOpen(true)}
+            style={{ color: '#fff', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}
+          >
+            Change
+          </button>
+          <button
+            onClick={() => { setCurrentTable(null); setToastMessage('Dine-In Table Mode Cleared.'); }}
+            style={{ color: 'rgba(255,255,255,0.8)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}
+          >
+            ✕ Exit
+          </button>
+        </div>
+      )}
+
       {/* Main Content Sections */}
       <main>
         <HeroSection 
@@ -217,7 +264,7 @@ function App() {
       <QrMenuModal
         isOpen={isQrOpen}
         onClose={() => setIsQrOpen(false)}
-        currentTable={currentTable?.tableNumber}
+        currentTable={currentTable}
         onSelectTable={(tableInfo) => {
           setCurrentTable(tableInfo);
           setToastMessage(`Dine-in Table #${tableInfo.tableNumber} (${tableInfo.zone}) Activated!`);
