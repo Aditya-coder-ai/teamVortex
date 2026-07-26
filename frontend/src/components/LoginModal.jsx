@@ -12,6 +12,8 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
+  const [isStaffAccount, setIsStaffAccount] = useState(false);
+  const [staffPasscode, setStaffPasscode] = useState('');
 
   if (!isOpen) return null;
 
@@ -38,13 +40,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
       if (!response.ok) {
         if (data.requiresVerification) {
-          if (data.devOtp) {
-            setOtp(data.devOtp);
-          }
           if (data.previewUrl) {
             setPreviewUrl(data.previewUrl);
           }
-          setInfoMsg('Email requires verification. A code has been sent to your email.');
+          setInfoMsg('Email requires verification. A 6-digit code has been sent to your email.');
           setTab('otp');
         } else {
           setErrorMsg(data.message || 'Login failed. Please check your credentials.');
@@ -72,10 +71,17 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setLoading(true);
 
     try {
+      const isStaffRequest = isStaffAccount || email.toLowerCase().trim().endsWith('@freshbowl.com');
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email, password, role: 'customer' })
+        body: JSON.stringify({ 
+          fullName, 
+          email, 
+          password, 
+          role: isStaffRequest ? 'staff' : 'customer',
+          staffPasscode: isStaffAccount ? staffPasscode : undefined
+        })
       });
 
       const data = await response.json();
@@ -86,12 +92,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         return;
       }
 
-      if (data.devOtp) {
-        setOtp(data.devOtp);
-        setInfoMsg(`Account created! [Dev Mode OTP: ${data.devOtp}] (Auto-filled below)`);
-      } else {
-        setInfoMsg('Account created! Please enter the 6-digit OTP sent to your email.');
-      }
+      setInfoMsg('Account created! Please enter the 6-digit OTP code sent to your email.');
       if (data.previewUrl) {
         setPreviewUrl(data.previewUrl);
       }
@@ -233,7 +234,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
         {/* Tab 1: Login Form */}
         {tab === 'login' && (
-          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+          <form className="tab-slide-enter" onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: '600', marginBottom: '0.4rem' }}>
                 Email Address
@@ -289,7 +290,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
         {/* Tab 2: Register Form */}
         {tab === 'register' && (
-          <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+          <form className="tab-slide-enter" onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: '600', marginBottom: '0.4rem' }}>
                 Full Name
@@ -353,6 +354,51 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               />
             </div>
 
+            {/* Staff Account Access Option */}
+            <div style={{
+              background: 'var(--surface-container-low)',
+              padding: '0.85rem 1.1rem',
+              borderRadius: '1.1rem',
+              border: '1px solid var(--outline-variant)'
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.825rem', fontWeight: '600' }}>
+                <input 
+                  type="checkbox" 
+                  checked={isStaffAccount} 
+                  onChange={(e) => setIsStaffAccount(e.target.checked)} 
+                  style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+                />
+                <span>Register as Restaurant Staff / Manager Account</span>
+              </label>
+
+              {isStaffAccount && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.775rem', fontWeight: '600', marginBottom: '0.35rem', color: 'var(--primary)' }}>
+                    Staff Security Passcode
+                  </label>
+                  <input 
+                    type="password" 
+                    placeholder="Enter Staff Passcode (e.g. STAFF2026)"
+                    value={staffPasscode}
+                    onChange={(e) => setStaffPasscode(e.target.value)}
+                    required={isStaffAccount}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 1rem',
+                      borderRadius: '9999px',
+                      border: '1.5px solid var(--primary)',
+                      background: 'var(--background)',
+                      fontSize: '0.85rem',
+                      outline: 'none'
+                    }}
+                  />
+                  <span style={{ display: 'block', fontSize: '0.725rem', color: 'var(--secondary)', marginTop: '0.35rem' }}>
+                    * Staff access requires an authorized @freshbowl.com email or valid security passcode.
+                  </span>
+                </div>
+              )}
+            </div>
+
             <button 
               type="submit" 
               className="btn-pill-primary" 
@@ -366,7 +412,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
         {/* Tab 3: Verify OTP Form */}
         {tab === 'otp' && (
-          <form onSubmit={handleVerifyOtpSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+          <form className="tab-slide-enter" onSubmit={handleVerifyOtpSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--secondary)' }}>
                 Verification code sent to <strong>{email}</strong>

@@ -19,14 +19,15 @@ import AiChatConcierge from './components/AiChatConcierge';
 import { INITIAL_MENU_ITEMS } from './data/menuData';
 import DashboardLayout from './components/dashboard/DashboardLayout';
 
+const STAFF_ROLES = ['staff', 'manager', 'admin'];
+
 function App() {
-  const [viewMode, setViewMode] = useState(() => {
+  // Dashboard URL detection is deferred until auth is resolved
+  const [pendingDashboard, setPendingDashboard] = useState(() => {
     const path = window.location.pathname.toLowerCase();
-    if (path.includes('dashboard') || path.includes('inventory') || path.includes('kds')) {
-      return 'dashboard';
-    }
-    return 'storefront';
+    return path.includes('dashboard') || path.includes('inventory') || path.includes('kds');
   });
+  const [viewMode, setViewMode] = useState('storefront');
 
   const [activeSection, setActiveSection] = useState('hero');
   const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
@@ -75,7 +76,15 @@ function App() {
   useEffect(() => {
     const fetchCurrentUser = async () => {
       const token = localStorage.getItem('auth_token');
-      if (!token) return;
+      if (!token) {
+        // No token — if URL tried to open dashboard, show login prompt
+        if (pendingDashboard) {
+          setPendingDashboard(false);
+          setToastMessage('🔒 Please sign in with a staff account to access the dashboard.');
+          setIsLoginOpen(true);
+        }
+        return;
+      }
 
       try {
         const response = await fetch('/api/auth/me', {
@@ -86,12 +95,24 @@ function App() {
           const data = await response.json();
           if (data.user) {
             setUser(data.user);
+            // If URL requested dashboard and user has staff+ role, activate it
+            if (pendingDashboard && STAFF_ROLES.includes(data.user.role)) {
+              setViewMode('dashboard');
+            } else if (pendingDashboard) {
+              setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff.');
+            }
           }
         } else {
           localStorage.removeItem('auth_token');
+          if (pendingDashboard) {
+            setToastMessage('🔒 Session expired. Please sign in again to access the dashboard.');
+            setIsLoginOpen(true);
+          }
         }
       } catch (err) {
         console.error('Failed to restore user session:', err);
+      } finally {
+        setPendingDashboard(false);
       }
     };
 
@@ -138,23 +159,61 @@ function App() {
     }
     localStorage.removeItem('auth_token');
     setUser(null);
+    setViewMode('storefront'); // Force out of dashboard on logout
     setToastMessage('You have been logged out.');
   };
 
+  // Gatekeeper: only allow staff+ roles into the dashboard
+  const handleOpenDashboard = async () => {
+    if (!user) {
+      setToastMessage('🔒 Please sign in with a staff account to access the dashboard.');
+      setIsLoginOpen(true);
+      return;
+    }
+    if (!STAFF_ROLES.includes(user.role)) {
+      setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff only.');
+      return;
+    }
+    // Server-side double-verification
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/dashboard/verify', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        setToastMessage('🔒 Access Denied — Server rejected dashboard access.');
+        return;
+      }
+    } catch (err) {
+      console.error('Dashboard verify error:', err);
+    }
+    setViewMode('dashboard');
+  };
+
+  // Dashboard render guard — force storefront if auth is invalid
   if (viewMode === 'dashboard') {
-    return (
-      <DashboardLayout 
-        onReturnToStore={() => setViewMode('storefront')}
-        activeOrders={activeOrder ? [activeOrder] : []}
-        onUpdateOrderStatus={(orderId, nextStatus) => {
-          setToastMessage(`Order ${orderId} updated to ${nextStatus}`);
-        }}
-      />
-    );
+    if (!user || !STAFF_ROLES.includes(user.role)) {
+      // Race condition safety: if somehow viewMode is dashboard but user is not staff
+      setViewMode('storefront');
+    } else {
+      return (
+        <div className="view-slide-container">
+          <DashboardLayout 
+            onReturnToStore={() => setViewMode('storefront')}
+            activeOrders={activeOrder ? [activeOrder] : []}
+            onUpdateOrderStatus={(orderId, nextStatus) => {
+              setToastMessage(`Order ${orderId} updated to ${nextStatus}`);
+            }}
+            currentUser={user}
+            onLogout={handleLogout}
+          />
+        </div>
+      );
+    }
   }
 
   return (
-    <div className="app-container texture-overlay">
+    <div className="app-container texture-overlay view-slide-container">
       {/* Toast Notification Banner */}
       {toastMessage && (
         <div style={{
@@ -204,7 +263,7 @@ function App() {
         onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
         activeOrder={activeOrder}
         queueState={queueState}
-        onOpenDashboard={() => setViewMode('dashboard')}
+        onOpenDashboard={handleOpenDashboard}
       />
 
       {/* Active Dine-In Table Sticky Banner */}
