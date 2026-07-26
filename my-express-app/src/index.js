@@ -71,6 +71,19 @@ app.get('/api/protected/admin-only', verifyJWT, authorizeRole('admin'), (req, re
   res.json({ success: true, message: 'Access granted to Admin Panel (Admin Only)' });
 });
 
+// Dashboard Access Verification — Staff, Manager, Admin only
+app.get('/api/dashboard/verify', verifyJWT, authorizeRole('staff', 'manager', 'admin'), (req, res) => {
+  res.json({
+    success: true,
+    message: 'Dashboard access granted',
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      role: req.user.role,
+    },
+  });
+});
+
 // 404 Route Handler
 app.use((req, res, next) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });

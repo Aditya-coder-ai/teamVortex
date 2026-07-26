@@ -133,27 +133,29 @@ export default function Header({
             )}
           </div>
 
-          {/* Staff OS Dashboard Link */}
-          <button
-            type="button"
-            className="nav-link staff-dashboard-nav-btn"
-            onClick={onOpenDashboard}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              background: '#0F172A',
-              color: '#FFFFFF',
-              padding: '0.35rem 0.85rem',
-              borderRadius: '9999px',
-              fontSize: '0.8rem',
-              fontWeight: '700',
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(15,23,42,0.15)'
-            }}
-          >
-            📊 Staff OS / KDS
-          </button>
+          {/* Staff OS Dashboard Link — only visible to staff/manager/admin */}
+          {currentUser && ['staff', 'manager', 'admin'].includes(currentUser.role) && (
+            <button
+              type="button"
+              className="nav-link staff-dashboard-nav-btn"
+              onClick={onOpenDashboard}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: '#0F172A',
+                color: '#FFFFFF',
+                padding: '0.35rem 0.85rem',
+                borderRadius: '9999px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(15,23,42,0.15)'
+              }}
+            >
+              📊 Staff OS / KDS
+            </button>
+          )}
         </nav>
 
         {/* Header Right Actions */}

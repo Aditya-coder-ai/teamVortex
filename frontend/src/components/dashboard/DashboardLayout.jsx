@@ -5,7 +5,7 @@ import InventoryOps from './InventoryOps';
 import TableManagement from './TableManagement';
 import './Dashboard.css';
 
-function DashboardLayout({ onReturnToStore, activeOrders = [], onUpdateOrderStatus, tables = [], onUpdateTableStatus }) {
+function DashboardLayout({ onReturnToStore, activeOrders = [], onUpdateOrderStatus, tables = [], onUpdateTableStatus, currentUser, onLogout }) {
   const [activeTab, setActiveTab] = useState('executive'); // 'executive' | 'kds' | 'inventory' | 'tables'
   const [isNightMode, setIsNightMode] = useState(false);
   const [storeStatus, setStoreStatus] = useState('OPEN'); // 'OPEN' | 'RUSH' | 'PAUSED'
@@ -61,11 +61,21 @@ function DashboardLayout({ onReturnToStore, activeOrders = [], onUpdateOrderStat
           </button>
 
           <div className="staff-profile">
-            <div className="staff-avatar">FB</div>
+            <div className="staff-avatar">{currentUser ? currentUser.fullName?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'FB'}</div>
             <div className="staff-info">
-              <span className="staff-name">Chef Manager</span>
-              <span className="staff-role">Main Kitchen</span>
+              <span className="staff-name">{currentUser?.fullName || 'Staff Member'}</span>
+              <span className="staff-role" style={{ textTransform: 'capitalize' }}>{currentUser?.role || 'staff'}</span>
             </div>
+            {onLogout && (
+              <button
+                className="theme-toggle-btn"
+                onClick={onLogout}
+                title="Sign out of dashboard"
+                style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}
+              >
+                🔒 Sign Out
+              </button>
+            )}
           </div>
         </div>
       </header>

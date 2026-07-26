@@ -67,7 +67,6 @@ const generateAndSendOtp = async (user) => {
   return { 
     message: 'OTP sent successfully', 
     expiresAt: otpExpires,
-    devOtp: process.env.NODE_ENV !== 'production' ? otpCode : undefined,
     previewUrl: emailResult?.previewUrl || null
   };
 };
