@@ -7,6 +7,8 @@ import StayConnectedSection from './components/StayConnectedSection';
 import Footer from './components/Footer';
 import DishModal from './components/DishModal';
 import LoginModal from './components/LoginModal';
+import { auth } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 // Feature Modals
 import QrMenuModal from './components/QrMenuModal';
@@ -72,51 +74,49 @@ function App() {
     }
   }, [toastMessage]);
 
-  // Check stored authentication token on mount
+  // Firebase Auth State Listener — replaces manual token checks
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const token = localStorage.getItem('auth_token');
-      if (!token) {
-        // No token — if URL tried to open dashboard, show login prompt
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          localStorage.setItem('auth_token', idToken);
+
+          const response = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${idToken}` }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+              setUser(data.user);
+              // If URL requested dashboard and user has staff+ role, activate it
+              if (pendingDashboard && STAFF_ROLES.includes(data.user.role)) {
+                setViewMode('dashboard');
+              } else if (pendingDashboard) {
+                setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff.');
+              }
+            }
+          } else {
+            // User exists in Firebase but not synced to backend yet
+            localStorage.removeItem('auth_token');
+          }
+        } catch (err) {
+          console.error('Failed to restore user session:', err);
+        }
+      } else {
+        // No Firebase user — signed out
+        localStorage.removeItem('auth_token');
+        setUser(null);
         if (pendingDashboard) {
-          setPendingDashboard(false);
           setToastMessage('🔒 Please sign in with a staff account to access the dashboard.');
           setIsLoginOpen(true);
         }
-        return;
       }
+      setPendingDashboard(false);
+    });
 
-      try {
-        const response = await fetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.user) {
-            setUser(data.user);
-            // If URL requested dashboard and user has staff+ role, activate it
-            if (pendingDashboard && STAFF_ROLES.includes(data.user.role)) {
-              setViewMode('dashboard');
-            } else if (pendingDashboard) {
-              setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff.');
-            }
-          }
-        } else {
-          localStorage.removeItem('auth_token');
-          if (pendingDashboard) {
-            setToastMessage('🔒 Session expired. Please sign in again to access the dashboard.');
-            setIsLoginOpen(true);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to restore user session:', err);
-      } finally {
-        setPendingDashboard(false);
-      }
-    };
-
-    fetchCurrentUser();
+    return () => unsubscribe();
   }, []);
 
   const handleNavigate = (sectionId) => {
@@ -153,6 +153,9 @@ function App() {
 
   const handleLogout = async () => {
     try {
+      // Sign out from Firebase
+      await signOut(auth);
+      // Clear server-side cookies
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (err) {
       console.error('Logout request error:', err);
@@ -174,9 +177,10 @@ function App() {
       setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff only.');
       return;
     }
-    // Server-side double-verification
+    // Server-side double-verification using Firebase ID token
     try {
-      const token = localStorage.getItem('auth_token');
+      const firebaseUser = auth.currentUser;
+      const token = firebaseUser ? await firebaseUser.getIdToken() : localStorage.getItem('auth_token');
       const res = await fetch('/api/dashboard/verify', {
         headers: { Authorization: `Bearer ${token}` }
       });

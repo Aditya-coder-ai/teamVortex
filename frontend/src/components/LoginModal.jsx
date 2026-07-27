@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
+import { auth, googleProvider } from '../firebase';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  sendEmailVerification,
+  updateProfile,
+} from 'firebase/auth';
 
 export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
-  const [tab, setTab] = useState('login'); // 'login' | 'register' | 'otp'
+  const [tab, setTab] = useState('login'); // 'login' | 'register'
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
 
   // Form states
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState('');
   const [isStaffAccount, setIsStaffAccount] = useState(false);
   const [staffPasscode, setStaffPasscode] = useState('');
 
@@ -20,7 +26,54 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const resetMessages = () => {
     setErrorMsg('');
     setInfoMsg('');
-    setPreviewUrl('');
+  };
+
+  /**
+   * After Firebase auth succeeds, sync the user to MongoDB backend
+   * to get role info and create the user record if needed.
+   */
+  const syncUserToBackend = async (firebaseUser, options = {}) => {
+    const idToken = await firebaseUser.getIdToken();
+    
+    const response = await fetch('/api/auth/firebase-sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        displayName: firebaseUser.displayName || options.displayName || '',
+        role: options.role || 'customer',
+        staffPasscode: options.staffPasscode || '',
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to sync user with server.');
+    }
+
+    return { ...data, token: idToken };
+  };
+
+  /**
+   * Map Firebase error codes to user-friendly messages
+   */
+  const getFirebaseErrorMessage = (errorCode) => {
+    const errorMap = {
+      'auth/invalid-email': 'Invalid email address.',
+      'auth/user-disabled': 'This account has been disabled.',
+      'auth/user-not-found': 'No account found with this email.',
+      'auth/wrong-password': 'Incorrect password.',
+      'auth/invalid-credential': 'Invalid email or password. Please check your credentials.',
+      'auth/email-already-in-use': 'An account with this email already exists. Try signing in.',
+      'auth/weak-password': 'Password must be at least 6 characters.',
+      'auth/too-many-requests': 'Too many attempts. Please try again later.',
+      'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+      'auth/popup-blocked': 'Pop-up was blocked. Please allow pop-ups for this site.',
+      'auth/network-request-failed': 'Network error. Please check your connection.',
+    };
+    return errorMap[errorCode] || 'Authentication failed. Please try again.';
   };
 
   // Handle Login Submit
@@ -30,35 +83,30 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.requiresVerification) {
-          if (data.previewUrl) {
-            setPreviewUrl(data.previewUrl);
-          }
-          setInfoMsg('Email requires verification. A 6-digit code has been sent to your email.');
-          setTab('otp');
-        } else {
-          setErrorMsg(data.message || 'Login failed. Please check your credentials.');
-        }
+      // Check email verification
+      if (!firebaseUser.emailVerified) {
+        setInfoMsg('Please verify your email first. Check your inbox for a verification link.');
+        await sendEmailVerification(firebaseUser);
+        setLoading(false);
         return;
       }
 
-      if (data.token) {
-        localStorage.setItem('auth_token', data.token);
-      }
+      // Sync with backend to get role
+      const data = await syncUserToBackend(firebaseUser);
+
+      localStorage.setItem('auth_token', data.token);
       onLoginSuccess(data.user || { email, name: email.split('@')[0] });
       onClose();
     } catch (err) {
       console.error('Login error:', err);
-      setErrorMsg('Unable to connect to authentication server.');
+      if (err.code) {
+        setErrorMsg(getFirebaseErrorMessage(err.code));
+      } else {
+        setErrorMsg(err.message || 'Unable to connect to authentication server.');
+      }
     } finally {
       setLoading(false);
     }
@@ -72,67 +120,66 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     try {
       const isStaffRequest = isStaffAccount || email.toLowerCase().trim().endsWith('@freshbowl.com');
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          fullName, 
-          email, 
-          password, 
-          role: isStaffRequest ? 'staff' : 'customer',
-          staffPasscode: isStaffAccount ? staffPasscode : undefined
-        })
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // Set display name on Firebase profile
+      await updateProfile(firebaseUser, { displayName: fullName });
+
+      // Send email verification
+      await sendEmailVerification(firebaseUser);
+
+      // Sync with backend
+      await syncUserToBackend(firebaseUser, {
+        displayName: fullName,
+        role: isStaffRequest ? 'staff' : 'customer',
+        staffPasscode: isStaffAccount ? staffPasscode : '',
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        const detailErr = data.errors && data.errors.length > 0 ? data.errors.map(e => e.message).join('. ') : data.message;
-        setErrorMsg(detailErr || 'Registration failed.');
-        return;
-      }
-
-      setInfoMsg('Account created! Please enter the 6-digit OTP code sent to your email.');
-      if (data.previewUrl) {
-        setPreviewUrl(data.previewUrl);
-      }
-      setTab('otp');
+      setInfoMsg('Account created! A verification email has been sent. Please verify your email then sign in.');
+      setTab('login');
     } catch (err) {
       console.error('Registration error:', err);
-      setErrorMsg('Unable to connect to authentication server.');
+      if (err.code) {
+        setErrorMsg(getFirebaseErrorMessage(err.code));
+      } else {
+        setErrorMsg(err.message || 'Unable to connect to authentication server.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle OTP Verification Submit
-  const handleVerifyOtpSubmit = async (e) => {
-    e.preventDefault();
+  // Handle Google Sign-In
+  const handleGoogleSignIn = async () => {
     resetMessages();
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp })
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+
+      // Sync with backend
+      const data = await syncUserToBackend(firebaseUser, {
+        displayName: firebaseUser.displayName,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setErrorMsg(data.message || 'Invalid or expired OTP code.');
-        return;
-      }
-
-      if (data.token) {
-        localStorage.setItem('auth_token', data.token);
-      }
-      onLoginSuccess(data.user || { email, fullName: fullName || email.split('@')[0] });
+      const idToken = await firebaseUser.getIdToken();
+      localStorage.setItem('auth_token', idToken);
+      onLoginSuccess(data.user || {
+        email: firebaseUser.email,
+        name: firebaseUser.displayName,
+        fullName: firebaseUser.displayName,
+      });
       onClose();
     } catch (err) {
-      console.error('OTP error:', err);
-      setErrorMsg('Unable to verify OTP.');
+      console.error('Google sign-in error:', err);
+      if (err.code) {
+        setErrorMsg(getFirebaseErrorMessage(err.code));
+      } else {
+        setErrorMsg(err.message || 'Google sign-in failed.');
+      }
     } finally {
       setLoading(false);
     }
@@ -156,50 +203,48 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         </div>
 
         {/* Tabs Switcher */}
-        {tab !== 'otp' && (
-          <div style={{
-            display: 'flex',
-            background: 'var(--surface-container-low)',
-            padding: '0.3rem',
-            borderRadius: '9999px',
-            marginBottom: '1.5rem'
-          }}>
-            <button
-              type="button"
-              onClick={() => { setTab('login'); resetMessages(); }}
-              style={{
-                flex: 1,
-                padding: '0.5rem',
-                borderRadius: '9999px',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                background: tab === 'login' ? 'var(--surface-container-lowest)' : 'transparent',
-                color: tab === 'login' ? 'var(--primary)' : 'var(--secondary)',
-                boxShadow: tab === 'login' ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setTab('register'); resetMessages(); }}
-              style={{
-                flex: 1,
-                padding: '0.5rem',
-                borderRadius: '9999px',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                background: tab === 'register' ? 'var(--surface-container-lowest)' : 'transparent',
-                color: tab === 'register' ? 'var(--primary)' : 'var(--secondary)',
-                boxShadow: tab === 'register' ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              Register
-            </button>
-          </div>
-        )}
+        <div style={{
+          display: 'flex',
+          background: 'var(--surface-container-low)',
+          padding: '0.3rem',
+          borderRadius: '9999px',
+          marginBottom: '1.5rem'
+        }}>
+          <button
+            type="button"
+            onClick={() => { setTab('login'); resetMessages(); }}
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              borderRadius: '9999px',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              background: tab === 'login' ? 'var(--surface-container-lowest)' : 'transparent',
+              color: tab === 'login' ? 'var(--primary)' : 'var(--secondary)',
+              boxShadow: tab === 'login' ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setTab('register'); resetMessages(); }}
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              borderRadius: '9999px',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              background: tab === 'register' ? 'var(--surface-container-lowest)' : 'transparent',
+              color: tab === 'register' ? 'var(--primary)' : 'var(--secondary)',
+              boxShadow: tab === 'register' ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Register
+          </button>
+        </div>
 
         {/* Status Messages */}
         {errorMsg && (
@@ -284,6 +329,45 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               style={{ width: '100%', marginTop: '0.5rem', opacity: loading ? 0.7 : 1 }}
             >
               {loading ? 'Authenticating...' : 'Sign In'}
+            </button>
+
+            {/* Divider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '0.25rem 0' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--outline-variant)' }} />
+              <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', fontWeight: '500' }}>or</span>
+              <div style={{ flex: 1, height: '1px', background: 'var(--outline-variant)' }} />
+            </div>
+
+            {/* Google Sign-In Button */}
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.65rem',
+                padding: '0.75rem 1.25rem',
+                borderRadius: '9999px',
+                border: '1.5px solid var(--outline-variant)',
+                background: 'var(--surface-container-lowest)',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '600',
+                color: 'var(--on-surface)',
+                transition: 'all 0.2s ease',
+                opacity: loading ? 0.7 : 1,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              Continue with Google
             </button>
           </form>
         )}
@@ -407,74 +491,44 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             >
               {loading ? 'Registering...' : 'Create Account'}
             </button>
-          </form>
-        )}
 
-        {/* Tab 3: Verify OTP Form */}
-        {tab === 'otp' && (
-          <form className="tab-slide-enter" onSubmit={handleVerifyOtpSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-            <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '0.85rem', color: 'var(--secondary)' }}>
-                Verification code sent to <strong>{email}</strong>
-              </span>
+            {/* Divider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '0.25rem 0' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--outline-variant)' }} />
+              <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', fontWeight: '500' }}>or</span>
+              <div style={{ flex: 1, height: '1px', background: 'var(--outline-variant)' }} />
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: '600', marginBottom: '0.4rem', textAlign: 'center' }}>
-                Enter 6-Digit OTP Code
-              </label>
-              <input 
-                type="text" 
-                placeholder="123456"
-                maxLength={6}
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.trim())}
-                required
-                style={{
-                  width: '100%',
-                  padding: '0.85rem 1.25rem',
-                  borderRadius: '9999px',
-                  border: '2px solid var(--primary)',
-                  background: 'var(--background)',
-                  outline: 'none',
-                  textAlign: 'center',
-                  fontSize: '1.4rem',
-                  letterSpacing: '0.4em',
-                  fontWeight: '700'
-                }}
-              />
-            </div>
-
-            {previewUrl && (
-              <div style={{
-                textAlign: 'center',
-                background: 'rgba(76, 175, 80, 0.08)',
-                border: '1px solid #4CAF50',
-                borderRadius: '1rem',
-                padding: '0.75rem 1rem',
-                fontSize: '0.825rem'
-              }}>
-                📧 <a href={previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#4CAF50', fontWeight: 600 }}>
-                  View your OTP email here (Ethereal inbox)
-                </a>
-              </div>
-            )}
-
-            <button 
-              type="submit" 
-              className="btn-pill-primary" 
+            {/* Google Sign-In Button */}
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
               disabled={loading}
-              style={{ width: '100%', marginTop: '0.5rem', opacity: loading ? 0.7 : 1 }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.65rem',
+                padding: '0.75rem 1.25rem',
+                borderRadius: '9999px',
+                border: '1.5px solid var(--outline-variant)',
+                background: 'var(--surface-container-lowest)',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '600',
+                color: 'var(--on-surface)',
+                transition: 'all 0.2s ease',
+                opacity: loading ? 0.7 : 1,
+              }}
             >
-              {loading ? 'Verifying...' : 'Verify OTP & Complete Sign In'}
-            </button>
-
-            <button 
-              type="button" 
-              onClick={() => { setTab('login'); resetMessages(); }}
-              style={{ fontSize: '0.8rem', color: 'var(--secondary)', textDecoration: 'underline', marginTop: '0.5rem' }}
-            >
-              ← Back to Sign In
+              <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              Continue with Google
             </button>
           </form>
         )}

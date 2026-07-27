@@ -1,21 +1,27 @@
-const { verifyAccessToken } = require('../config/jwt');
+const { admin } = require('../config/firebase');
 
 /**
- * Middleware to verify JWT token from Authorization header or cookies
+ * Middleware to verify Firebase ID token from Authorization header
+ * Replaces the old custom JWT verification middleware.
+ * 
+ * After verification, looks up the user in MongoDB to get role info
+ * and sets req.user = { id, email, role, firebaseUid }
  */
-const verifyJWT = (req, res, next) => {
-  let token = null;
+const User = require('../models/User');
 
-  // Extract from Authorization header
+const verifyFirebaseToken = async (req, res, next) => {
+  let idToken = null;
+
+  // Extract token from Authorization header
   const authHeader = req.headers.authorization || req.headers.Authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
+    idToken = authHeader.substring(7);
   } else if (req.cookies && req.cookies.token) {
-    // Extract from Cookie
-    token = req.cookies.token;
+    // Fallback: extract from cookie
+    idToken = req.cookies.token;
   }
 
-  if (!token) {
+  if (!idToken) {
     return res.status(401).json({
       success: false,
       message: 'Access denied. No token provided.',
@@ -23,17 +29,52 @@ const verifyJWT = (req, res, next) => {
   }
 
   try {
-    const decoded = verifyAccessToken(token);
-    req.user = decoded; // Contains { id, email, role }
+    // Verify the Firebase ID token
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { uid, email } = decodedToken;
+
+    // Look up user in MongoDB to get role
+    const dbUser = await User.findOne({ firebaseUid: uid });
+
+    if (dbUser) {
+      req.user = {
+        id: dbUser._id || dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role,
+        firebaseUid: uid,
+        fullName: dbUser.fullName,
+        isVerified: dbUser.isVerified,
+      };
+    } else {
+      // User authenticated via Firebase but not yet synced to MongoDB
+      // Allow request to proceed with basic info (for /firebase-sync endpoint)
+      req.user = {
+        id: null,
+        email: email,
+        role: 'customer',
+        firebaseUid: uid,
+        fullName: decodedToken.name || null,
+        isVerified: decodedToken.email_verified || false,
+      };
+    }
+
     next();
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
+    if (error.code === 'auth/id-token-expired') {
       return res.status(401).json({
         success: false,
-        message: 'Token has expired. Please log in again.',
+        message: 'Token has expired. Please sign in again.',
       });
     }
 
+    if (error.code === 'auth/argument-error' || error.code === 'auth/id-token-revoked') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or revoked token.',
+      });
+    }
+
+    console.error('[AUTH] Firebase token verification error:', error.message);
     return res.status(401).json({
       success: false,
       message: 'Invalid or corrupted token.',
@@ -41,4 +82,4 @@ const verifyJWT = (req, res, next) => {
   }
 };
 
-module.exports = verifyJWT;
+module.exports = verifyFirebaseToken;

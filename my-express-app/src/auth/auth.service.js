@@ -1,10 +1,7 @@
-const bcrypt = require('bcryptjs');
 const User = require('../models/User');
-const { generateAndSendOtp, verifyUserOtp } = require('./otp.service');
-const { generateAccessToken, generateRefreshToken } = require('../config/jwt');
 
 /**
- * Register new user with Role Security Controls
+ * Allowed staff emails — whitelist for elevated roles
  */
 const ALLOWED_STAFF_EMAILS = [
   'staff@freshbowl.com',
@@ -14,10 +11,52 @@ const ALLOWED_STAFF_EMAILS = [
   'rajan.staff@freshbowl.com',
 ];
 
-const registerUser = async ({ fullName, email, password, role, staffPasscode }) => {
+/**
+ * Sync Firebase-authenticated user to MongoDB
+ * 
+ * Called after Firebase authentication on the frontend.
+ * Creates a new MongoDB user record if one doesn't exist,
+ * or returns the existing user with their role.
+ * 
+ * Preserves the staff domain/passcode role assignment logic.
+ */
+const syncFirebaseUser = async ({ firebaseUid, email, fullName, role, staffPasscode }) => {
   const normalizedEmail = email.toLowerCase().trim();
-  
-  // Security check: restrict staff/manager/admin roles to selected accounts only
+
+  // Check if user already exists by firebaseUid
+  let existingUser = await User.findOne({ firebaseUid });
+
+  if (!existingUser) {
+    // Also check by email (in case of email-based collision)
+    existingUser = await User.findOne({ email: normalizedEmail });
+  }
+
+  if (existingUser) {
+    // Update firebaseUid if not set (e.g., migrated user or email match)
+    if (!existingUser.firebaseUid || existingUser.firebaseUid !== firebaseUid) {
+      existingUser.firebaseUid = firebaseUid;
+      await existingUser.save();
+    }
+
+    // Update fullName if provided and different
+    if (fullName && existingUser.fullName !== fullName) {
+      existingUser.fullName = fullName;
+      await existingUser.save();
+    }
+
+    return {
+      message: 'User synced successfully',
+      user: {
+        id: existingUser._id || existingUser.id,
+        fullName: existingUser.fullName,
+        email: existingUser.email,
+        role: existingUser.role,
+        isVerified: existingUser.isVerified,
+      },
+    };
+  }
+
+  // New user — determine role with security checks
   let assignedRole = 'customer';
   const requestedRole = (role || '').toLowerCase();
   const isStaffRole = ['staff', 'manager', 'admin'].includes(requestedRole);
@@ -30,169 +69,27 @@ const registerUser = async ({ fullName, email, password, role, staffPasscode }) 
     assignedRole = requestedRole;
   }
 
-  // Check existing user
-  const existingUser = await User.findOne({ email: normalizedEmail });
-  if (existingUser) {
-    if (existingUser.isVerified) {
-      const error = new Error('User with this email already exists');
-      error.statusCode = 400;
-      throw error;
-    } else {
-      // User exists but unverified: update password & send new OTP
-      const salt = await bcrypt.genSalt(10);
-      existingUser.fullName = fullName;
-      existingUser.passwordHash = await bcrypt.hash(password, salt);
-      existingUser.role = assignedRole;
-      
-      await existingUser.save();
-      const otpRes1 = await generateAndSendOtp(existingUser);
-
-      return {
-        message: 'Account updated. Verification OTP sent to email.',
-        email: existingUser.email,
-        isVerified: false,
-        previewUrl: otpRes1.previewUrl,
-      };
-    }
-  }
-
-  // Hash password
-  const salt = await bcrypt.genSalt(10);
-  const passwordHash = await bcrypt.hash(password, salt);
-
-  // Create User
+  // Create new user in MongoDB
   const newUser = await User.create({
-    fullName,
+    firebaseUid,
+    fullName: fullName || normalizedEmail.split('@')[0],
     email: normalizedEmail,
-    passwordHash,
     role: assignedRole,
-    isVerified: false,
+    isVerified: true, // Firebase has already verified the email
   });
 
-  // Generate & Send OTP
-  const otpRes2 = await generateAndSendOtp(newUser);
-
   return {
-    message: 'Registration successful. OTP sent to your email.',
-    email: newUser.email,
-    isVerified: false,
-    previewUrl: otpRes2.previewUrl,
-  };
-};
-
-/**
- * Verify OTP code
- */
-const verifyOtp = async ({ email, otp }) => {
-  const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail });
-
-  if (!user) {
-    const error = new Error('User not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  await verifyUserOtp(user, otp);
-
-  // Generate JWT tokens
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
-
-  return {
-    message: 'Email verification successful',
-    token: accessToken,
-    refreshToken,
+    message: 'User created and synced successfully',
     user: {
-      id: user._id || user.id,
-      fullName: user.fullName,
-      email: user.email,
-      role: user.role,
-      isVerified: true,
+      id: newUser._id || newUser.id,
+      fullName: newUser.fullName,
+      email: newUser.email,
+      role: newUser.role,
+      isVerified: newUser.isVerified,
     },
   };
-};
-
-/**
- * Login user with Email + Password
- */
-const loginUser = async ({ email, password }) => {
-  const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail });
-
-  if (!user) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
-  }
-
-  if (!user.passwordHash) {
-    const error = new Error('Please log in using Google OAuth');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  // Compare password
-  const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
-  }
-
-  // Check email verification status
-  if (!user.isVerified) {
-    // Re-send OTP if unverified
-    const otpResLogin = await generateAndSendOtp(user);
-    const error = new Error('Email not verified. A new OTP has been sent to your email.');
-    error.statusCode = 403;
-    error.requiresVerification = true;
-    error.previewUrl = otpResLogin.previewUrl;
-    throw error;
-  }
-
-  // Generate JWT tokens
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
-
-  return {
-    message: 'Login successful',
-    token: accessToken,
-    refreshToken,
-    user: {
-      id: user._id || user.id,
-      name: user.fullName,
-      email: user.email,
-      role: user.role,
-    },
-  };
-};
-
-/**
- * Resend OTP
- */
-const resendOtp = async (email) => {
-  const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail });
-
-  if (!user) {
-    const error = new Error('User not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (user.isVerified) {
-    const error = new Error('Account is already verified');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  return await generateAndSendOtp(user);
 };
 
 module.exports = {
-  registerUser,
-  verifyOtp,
-  loginUser,
-  resendOtp,
+  syncFirebaseUser,
 };

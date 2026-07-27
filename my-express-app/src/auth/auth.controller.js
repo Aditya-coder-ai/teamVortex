@@ -1,15 +1,28 @@
 const authService = require('./auth.service');
-const { generateAccessToken, generateRefreshToken } = require('../config/jwt');
 const User = require('../models/User');
 
 /**
- * Handle Register Request
- * POST /api/auth/register
+ * Sync Firebase User to MongoDB
+ * POST /api/auth/firebase-sync
+ * 
+ * Called by frontend after Firebase authentication.
+ * The verifyFirebaseToken middleware has already verified the Firebase ID token
+ * and set req.user with { firebaseUid, email, fullName }.
  */
-const register = async (req, res, next) => {
+const firebaseSync = async (req, res, next) => {
   try {
-    const result = await authService.registerUser(req.body);
-    return res.status(201).json({
+    const { firebaseUid, email, fullName } = req.user;
+    const { role, staffPasscode, displayName } = req.body;
+
+    const result = await authService.syncFirebaseUser({
+      firebaseUid,
+      email,
+      fullName: displayName || fullName || email.split('@')[0],
+      role,
+      staffPasscode,
+    });
+
+    return res.status(200).json({
       success: true,
       ...result,
     });
@@ -19,121 +32,30 @@ const register = async (req, res, next) => {
 };
 
 /**
- * Handle Verify OTP Request
- * POST /api/auth/verify-otp
+ * Get Current Authenticated User
+ * GET /api/auth/me
  */
-const verifyOtp = async (req, res, next) => {
+const getCurrentUser = async (req, res, next) => {
   try {
-    const result = await authService.verifyOtp(req.body);
-    
-    // Set HTTP-only cookie for token and refreshToken
-    if (result.token) {
-      res.cookie('token', result.token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 15 * 60 * 1000, // 15 mins
-      });
-    }
-    if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    const firebaseUid = req.user.firebaseUid;
+    const dbUser = await User.findOne({ firebaseUid });
+
+    if (!dbUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found in database. Please complete registration.',
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: result.message,
-      token: result.token,
-      user: result.user,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Handle Login Request
- * POST /api/auth/login
- */
-const login = async (req, res, next) => {
-  try {
-    const result = await authService.loginUser(req.body);
-
-    if (result.token) {
-      res.cookie('token', result.token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 15 * 60 * 1000,
-      });
-    }
-    if (result.refreshToken) {
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: result.message,
-      token: result.token,
-      user: result.user,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Handle Resend OTP Request
- * POST /api/auth/resend-otp
- */
-const resendOtp = async (req, res, next) => {
-  try {
-    const result = await authService.resendOtp(req.body.email);
-    return res.status(200).json({
-      success: true,
-      message: result.message,
-      expiresAt: result.expiresAt,
-      previewUrl: result.previewUrl,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Handle Google OAuth Callback
- * GET /api/auth/google/callback
- */
-const googleCallback = async (req, res, next) => {
-  try {
-    const user = req.user;
-    if (!user) {
-      return res.status(401).json({ success: false, message: 'Google authentication failed' });
-    }
-
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Google login successful',
-      token: accessToken,
       user: {
-        id: user._id || user.id,
-        name: user.fullName,
-        email: user.email,
-        role: user.role,
+        id: dbUser._id || dbUser.id,
+        fullName: dbUser.fullName,
+        email: dbUser.email,
+        role: dbUser.role,
+        isVerified: dbUser.isVerified,
+        createdAt: dbUser.createdAt,
       },
     });
   } catch (error) {
@@ -154,44 +76,8 @@ const logout = async (req, res) => {
   });
 };
 
-/**
- * Get Current Authenticated User
- * GET /api/auth/me
- */
-const getCurrentUser = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      user: {
-        id: user._id || user.id,
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
-  register,
-  verifyOtp,
-  login,
-  resendOtp,
-  googleCallback,
-  logout,
+  firebaseSync,
   getCurrentUser,
+  logout,
 };

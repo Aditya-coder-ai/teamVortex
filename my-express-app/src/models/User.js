@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
   {
+    firebaseUid: {
+      type: String,
+      required: [true, 'Firebase UID is required'],
+      unique: true,
+      index: true,
+    },
     fullName: {
       type: String,
       required: [true, 'Full name is required'],
@@ -13,10 +19,6 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-    },
-    passwordHash: {
-      type: String,
-      default: null,
     },
     googleId: {
       type: String,
@@ -31,30 +33,6 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    otp: {
-      type: String,
-      default: null,
-    },
-    otpExpires: {
-      type: Date,
-      default: null,
-    },
-    otpAttempts: {
-      type: Number,
-      default: 0,
-    },
-    lastOtpSentAt: {
-      type: Date,
-      default: null,
-    },
-    otpRequestsInWindow: {
-      type: Number,
-      default: 0,
-    },
-    otpWindowStart: {
-      type: Date,
-      default: null,
-    },
   },
   {
     timestamps: true,
@@ -67,13 +45,6 @@ userSchema.set('toJSON', {
     ret.id = ret._id;
     delete ret._id;
     delete ret.__v;
-    delete ret.passwordHash;
-    delete ret.otp;
-    delete ret.otpExpires;
-    delete ret.otpAttempts;
-    delete ret.lastOtpSentAt;
-    delete ret.otpRequestsInWindow;
-    delete ret.otpWindowStart;
     return ret;
   },
 });
@@ -109,18 +80,12 @@ class InMemoryUserStore {
     const newUser = {
       _id,
       id: _id,
+      firebaseUid: data.firebaseUid,
       fullName: data.fullName,
       email: data.email?.toLowerCase(),
-      passwordHash: data.passwordHash || null,
       googleId: data.googleId || null,
       role: data.role || 'customer',
       isVerified: data.isVerified || false,
-      otp: data.otp || null,
-      otpExpires: data.otpExpires || null,
-      otpAttempts: data.otpAttempts || 0,
-      lastOtpSentAt: data.lastOtpSentAt || null,
-      otpRequestsInWindow: data.otpRequestsInWindow || 0,
-      otpWindowStart: data.otpWindowStart || null,
       createdAt: now,
       updatedAt: now,
       save: async function () {

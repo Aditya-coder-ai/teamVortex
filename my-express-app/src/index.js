@@ -4,11 +4,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
-const passport = require('./config/passport');
 const authRoutes = require('./auth/auth.routes');
-const verifyJWT = require('./middleware/verifyJWT');
+const verifyFirebaseToken = require('./middleware/verifyJWT');
 const authorizeRole = require('./middleware/authorizeRole');
 const errorHandler = require('./middleware/errorHandler');
+
+// Initialize Firebase Admin SDK (must be done before routes that use it)
+require('./config/firebase');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -24,9 +26,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-// Passport Initializer
-app.use(passport.initialize());
 
 // Database Connection
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -55,24 +54,24 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 
 // Role-Based Access Control Example Demonstration Routes
-app.get('/api/protected/customer-menu', verifyJWT, authorizeRole('customer', 'staff', 'manager', 'admin'), (req, res) => {
+app.get('/api/protected/customer-menu', verifyFirebaseToken, authorizeRole('customer', 'staff', 'manager', 'admin'), (req, res) => {
   res.json({ success: true, message: 'Access granted to Menu (Customer+ Role)' });
 });
 
-app.get('/api/protected/staff-orders', verifyJWT, authorizeRole('staff', 'manager', 'admin'), (req, res) => {
+app.get('/api/protected/staff-orders', verifyFirebaseToken, authorizeRole('staff', 'manager', 'admin'), (req, res) => {
   res.json({ success: true, message: 'Access granted to Manage Orders (Staff+ Role)' });
 });
 
-app.get('/api/protected/manager-dashboard', verifyJWT, authorizeRole('manager', 'admin'), (req, res) => {
+app.get('/api/protected/manager-dashboard', verifyFirebaseToken, authorizeRole('manager', 'admin'), (req, res) => {
   res.json({ success: true, message: 'Access granted to Manager Dashboard' });
 });
 
-app.get('/api/protected/admin-only', verifyJWT, authorizeRole('admin'), (req, res) => {
+app.get('/api/protected/admin-only', verifyFirebaseToken, authorizeRole('admin'), (req, res) => {
   res.json({ success: true, message: 'Access granted to Admin Panel (Admin Only)' });
 });
 
 // Dashboard Access Verification — Staff, Manager, Admin only
-app.get('/api/dashboard/verify', verifyJWT, authorizeRole('staff', 'manager', 'admin'), (req, res) => {
+app.get('/api/dashboard/verify', verifyFirebaseToken, authorizeRole('staff', 'manager', 'admin'), (req, res) => {
   res.json({
     success: true,
     message: 'Dashboard access granted',
@@ -98,6 +97,7 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`=================================================`);
     console.log(`🚀 Restaurant Auth Server running on port ${PORT}`);
     console.log(`📡 Endpoints mounted at http://localhost:${PORT}/api/auth`);
+    console.log(`🔥 Authentication: Firebase`);
     console.log(`=================================================`);
   });
 }
