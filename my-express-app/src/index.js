@@ -92,7 +92,7 @@ app.use((req, res, next) => {
 app.use(errorHandler);
 
 // Start Server
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`=================================================`);
     console.log(`🚀 Restaurant Auth Server running on port ${PORT}`);

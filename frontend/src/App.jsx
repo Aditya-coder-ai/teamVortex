@@ -82,27 +82,50 @@ function App() {
           const idToken = await firebaseUser.getIdToken();
           localStorage.setItem('auth_token', idToken);
 
-          const response = await fetch('/api/auth/me', {
-            headers: { Authorization: `Bearer ${idToken}` }
-          });
+          let data = null;
+          try {
+            const response = await fetch('/api/auth/me', {
+              headers: { Authorization: `Bearer ${idToken}` }
+            });
+            if (response.ok) {
+              data = await response.json();
+            }
+          } catch (fetchErr) {
+            console.warn('[AUTH] Backend API fetch failed, falling back to Firebase user profile:', fetchErr);
+          }
 
-          if (response.ok) {
-            const data = await response.json();
-            if (data.user) {
-              setUser(data.user);
-              // If URL requested dashboard and user has staff+ role, activate it
-              if (pendingDashboard && STAFF_ROLES.includes(data.user.role)) {
-                setViewMode('dashboard');
-              } else if (pendingDashboard) {
-                setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff.');
-              }
+          if (data && data.user) {
+            setUser(data.user);
+            if (pendingDashboard && STAFF_ROLES.includes(data.user.role)) {
+              setViewMode('dashboard');
+            } else if (pendingDashboard) {
+              setToastMessage('🔒 Access Denied — Dashboard is restricted to restaurant staff.');
             }
           } else {
-            // User exists in Firebase but not synced to backend yet
-            localStorage.removeItem('auth_token');
+            // Fallback: construct user profile directly from Firebase auth user
+            const isStaffEmail = firebaseUser.email && firebaseUser.email.toLowerCase().endsWith('@freshbowl.com');
+            const fallbackUser = {
+              id: firebaseUser.uid,
+              fullName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Member',
+              email: firebaseUser.email,
+              role: isStaffEmail ? 'staff' : 'customer',
+              isVerified: firebaseUser.emailVerified
+            };
+            setUser(fallbackUser);
+            if (pendingDashboard && isStaffEmail) {
+              setViewMode('dashboard');
+            }
           }
         } catch (err) {
           console.error('Failed to restore user session:', err);
+          const isStaffEmail = firebaseUser.email && firebaseUser.email.toLowerCase().endsWith('@freshbowl.com');
+          setUser({
+            id: firebaseUser.uid,
+            fullName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Member',
+            email: firebaseUser.email,
+            role: isStaffEmail ? 'staff' : 'customer',
+            isVerified: firebaseUser.emailVerified
+          });
         }
       } else {
         // No Firebase user — signed out
